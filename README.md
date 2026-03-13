@@ -1,167 +1,199 @@
-# 🗺️ Lead Gen System
+# Google Maps Lead Gen System
 
-> Scrapes local businesses from Google Maps → enriches with emails via website crawl → syncs everything to Google Sheets for outreach tracking.
+A complete lead generation pipeline that scrapes Google Maps, enriches leads with contact emails, and syncs everything to Google Sheets — ready for outreach.
 
-Built for scraping Mumbai/MMR businesses (clinics, CA firms, restaurants, etc.) across 50+ areas, but fully configurable for any city or category.
+Built for freelancers, agencies, and sales teams who need quality local business leads fast.
 
 ---
 
 ## What it does
 
-1. **Scrapes Google Maps** — searches `"{category} near {area}"`, collects business name, phone, website, address, rating
-2. **Enriches with email** — visits each business website and extracts contact emails
-3. **Syncs to Google Sheets** — pushes to a pre-structured tracker sheet with columns for manual outreach notes
+1. **Scrapes Google Maps** — searches any business category in any city/area, extracts business name, phone, website, address, rating
+2. **Enriches with emails** — visits each website and finds contact emails automatically (10 threads in parallel)
+3. **Syncs to Google Sheets** — pushes all leads to a tracker sheet with outreach status columns, deduplicates on re-runs
 
 ---
 
-## Tech Stack
-
-| Layer | Tool |
-|---|---|
-| Scraping | [Playwright](https://playwright.dev/python/) (headless Chromium) |
-| Email extraction | `requests` + `BeautifulSoup` |
-| Google Sheets API | `gspread` + `google-auth` |
-| Config | Python + `.env` |
-| Output | CSV + Google Sheets |
-
----
-
-## Project Structure
+## Demo
 
 ```
-leadgen/
-├── main.py              # Entry point + CLI flags
-├── scraper.py           # Google Maps scraper (Playwright)
-├── enricher.py          # Email extraction from business websites
-├── sheets.py            # Google Sheets sync
-├── config.py            # Areas, categories, scraper behaviour
-├── requirements.txt     # Python dependencies
-├── .env.example         # Template for environment variables
-└── credentials.json.example  # Template for Google service account
+Lead Gen Scraper
+Areas: 4  |  Categories: 3  |  Max per search: 20
+
+── Andheri West ──────────────────────────────────────
+  → CA firm in Andheri West Mumbai
+  Found 20 listings
+  ✓ A. M. Jain & Company             022 2636 1428
+  ✓ Engineer & Mehta, CA             022 4602 6909
+  ✓ AFS and Company                  098927 89813
+  Saved 18 leads (total: 18)
+
+Email Enricher — 10 threads
+  ✓ A. M. Jain & Company             info@amjain.com
+  ✓ Engineer & Mehta, CA             info@enmglobal.com
+
+Google Sheets Sync
+  ✓ Added 18 new leads
 ```
 
 ---
 
-## Setup
+## Tech stack
 
-### 1. Install dependencies
+- **Python 3.11+**
+- **Playwright** — browser automation for Google Maps
+- **BeautifulSoup4** — email extraction from websites
+- **gspread + google-auth** — Google Sheets API
+- **concurrent.futures** — parallel email enrichment
+- **rich** — terminal output
+
+---
+
+## Quick start
+
+### 1. Clone and install
 
 ```bash
+git clone https://github.com/yourusername/leadgen
+cd leadgen
+python3 -m venv venv
+source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-### 2. Configure environment
+### 2. Set up Google Sheets API
 
-Copy the example files and fill in your values:
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) → New project
+2. Enable **Google Sheets API** and **Google Drive API**
+3. Go to **Credentials** → **Create Credentials** → **Service Account**
+4. Under the service account → **Keys** → **Add Key** → JSON → download
+5. Rename the downloaded file to `credentials.json` and place it in the project folder
+6. Create a Google Sheet → **Share** it with the `client_email` from `credentials.json` (Editor access)
+7. Copy the Sheet ID from the URL: `docs.google.com/spreadsheets/d/`**THIS_PART**`/edit`
 
-```bash
-cp .env.example .env
-cp credentials.json.example credentials.json
+### 3. Configure
+
+Create a `.env` file:
+
 ```
-
-`.env`:
-```
-GOOGLE_SHEET_ID=your_google_sheet_id_here
+GOOGLE_SHEET_ID=your_sheet_id_here
 GOOGLE_CREDENTIALS_PATH=credentials.json
 ```
 
-### 3. Set up Google Sheets API
+Edit `config.py` to set your target areas and categories:
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com) → **New Project**
-2. Enable **Google Sheets API** and **Google Drive API**
-3. Go to **Credentials** → **Create Credentials** → **Service Account**
-4. Name it anything (e.g. `leadgen-bot`) → Create
-5. Open the service account → **Keys** tab → **Add Key** → JSON
-6. Download the JSON → rename it `credentials.json` → put it in the project folder
-7. Open your Google Sheet → **Share** → paste the `client_email` from `credentials.json` → Editor access
-8. Copy the Sheet ID from the URL: `docs.google.com/spreadsheets/d/THIS_PART/edit`
-9. Paste it in `.env` as `GOOGLE_SHEET_ID`
+```python
+AREAS = [
+    "Koramangala", "Indiranagar", "Whitefield",  # Bangalore example
+    # add as many areas as you want
+]
 
----
-
-## Running
-
-### Quick test (one area, one category, no sheets)
-
-```bash
-python main.py --areas "Andheri West" --categories "CA Firm" --no-sheets
+CATEGORIES = {
+    "Restaurant":    ("restaurant",    "Web Dev"),
+    "Gym":           ("gym",           "Both"),
+    "Dental Clinic": ("dental clinic", "Automation"),
+    # format: "Display Name": ("search keyword", "your service tag")
+}
 ```
 
-Check `leads_raw.csv` — if it looks good, proceed.
-
-### Full pipeline
+### 4. Run
 
 ```bash
+# Test — one area, one category, no sheets sync
+python main.py --areas "Koramangala" --categories "Restaurant" --no-sheets
+
+# Multiple areas and categories
+python main.py --areas "Koramangala" "Indiranagar" --categories "Restaurant" "Gym"
+
+# Full run — all areas and categories
 python main.py
-```
 
-### Other options
-
-```bash
-# Specific areas and categories
-python main.py --areas "Bandra West" "Andheri East" --categories "Clinic" "CA Firm"
-
-# Scrape only (skip email enrichment and sheets)
-python main.py --scrape-only
-
-# Enrich + sync only (skip scraping, use existing leads_raw.csv)
+# Skip scraping, just enrich and sync existing leads
 python main.py --skip-scrape
+
+# Scrape only, skip enrichment and sheets
+python main.py --scrape-only
 ```
 
 ---
 
 ## Output
 
+### CSV files
+
 | File | Contents |
 |---|---|
-| `leads_raw.csv` | Name, phone, website, address, rating |
+| `leads_raw.csv` | Scraped leads — name, phone, website, address, rating |
 | `leads_enriched.csv` | Same + email column |
-| Google Sheet | Full tracker with outreach status columns |
 
 ### Google Sheet columns
 
-| Column | Source |
+| Column | Filled by |
 |---|---|
-| Business Name, Category, Area, Phone, Website, Email, Scraped At | Auto-filled by scraper |
-| Service (Web Dev / Automation) | Based on category in `config.py` |
-| Outreach Status, Channel, Last Contact, Follow-up Date, Notes | You fill these manually |
+| Business Name | Scraper |
+| Category | Scraper |
+| Service | Scraper (from your config) |
+| Area | Scraper |
+| Phone | Scraper |
+| Website | Scraper |
+| Email | Enricher |
+| Outreach Status | You |
+| Channel | You |
+| Last Contact Date | You |
+| Follow-up Date | You |
+| Notes | You |
+| Scraped At | Scraper |
 
 ---
 
-## Configuration
+## Configuration options
 
-Edit `config.py` to change:
+All in `config.py`:
 
-- **`AREAS`** — list of areas to search
-- **`CATEGORIES`** — business types + recommended service mapping
-- **`MAX_RESULTS_PER_SEARCH`** — results per area×category (keep low to avoid blocks)
-- **`DELAY_MIN` / `DELAY_MAX`** — seconds between actions
-- **`HEADLESS`** — `False` = visible browser (safer for testing)
+| Setting | Default | Description |
+|---|---|---|
+| `MAX_RESULTS_PER_SEARCH` | 20 | Max leads per area × category |
+| `DELAY_MIN` / `DELAY_MAX` | 2.5 / 5.0 | Seconds between actions (anti-block) |
+| `HEADLESS` | False | Run browser headlessly |
+| `MAX_RETRIES` | 2 | Retries on timeout |
 
 ---
 
 ## Tips
 
 - Start with `HEADLESS = False` so you can see what's happening
-- Test 1-2 areas before running all of MMR
-- If Google blocks you, increase delays or wait 30 min
-- Both CSV and Sheets sync are **idempotent** — safe to re-run, won't duplicate
+- Test with one area before running everything
+- If Google blocks you, increase `DELAY_MIN` and `DELAY_MAX`
+- The scraper and sheets sync are both safe to re-run — duplicates are skipped automatically
+- Email hit rate is typically 40–60% depending on business type
 
 ---
 
-## Troubleshooting
+## Project structure
 
-**"No results panel found"** — Google Maps changed its layout. Check selectors in `scraper.py`.
-
-**Rate limited / CAPTCHA** — Increase `DELAY_MIN`/`DELAY_MAX`. Run non-headless. Wait and retry.
-
-**Email not found** — Normal. Most small businesses don't list email publicly. Use phone/WhatsApp.
-
-**Sheets auth error** — Confirm you shared the sheet with the service account email in `credentials.json`.
+```
+leadgen/
+├── main.py          # Orchestrates the full pipeline
+├── scraper.py       # Google Maps scraper (Playwright)
+├── enricher.py      # Email enricher (parallel threading)
+├── sheets.py        # Google Sheets sync
+├── config.py        # Areas, categories, settings — edit this
+├── requirements.txt
+└── .env             # Your credentials (never commit this)
+```
 
 ---
 
-## ⚠️ Usage Note
+## Limitations
 
-This tool is for personal outreach/research only. Respect Google's Terms of Service and local data privacy regulations. Do not run at aggressive speeds.
+- Google Maps scraping may break if Google changes their HTML structure
+- Delays are necessary — running too fast will trigger CAPTCHAs
+- Email enrichment works best for businesses with a website
+- Re-runs load existing CSV to skip already-scraped leads
+
+---
+
+## License
+
+MIT
