@@ -1,0 +1,33 @@
+# ── Secrets & credentials ────────────────────────────────────────────────────
+.env
+credentials.json
+
+# ── Output data (can be large / sensitive) ───────────────────────────────────
+leads_raw.csv
+leads_enriched.csv
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+.venv/
+env/
+ENV/
+
+# ── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ── IDEs ─────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo

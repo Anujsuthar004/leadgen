@@ -1,0 +1,9 @@
+playwright
+beautifulsoup4
+requests
+gspread
+google-auth
+pandas
+python-dotenv
+rich
+tqdm
