@@ -42,13 +42,20 @@ console = Console()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-SENDER_EMAIL    = os.getenv("SENDER_EMAIL", "voolaweb@gmail.com")
+SENDER_EMAIL    = os.getenv("SENDER_EMAIL", "your_email@gmail.com")
 SENDER_PASSWORD = os.getenv("SENDER_APP_PASSWORD", "")
 ENRICHED_CSV    = "leads_enriched.csv"
 LOG_CSV         = "email_log.csv"
 DAILY_LIMIT     = 50
 DELAY_MIN       = 15   # seconds between emails
 DELAY_MAX       = 25
+
+# Personal info from .env
+MY_NAME         = os.getenv("MY_NAME", "Anuj")
+MY_FULL_NAME    = os.getenv("MY_FULL_NAME", "Anuj Suthar")
+MY_PHONE        = os.getenv("MY_PHONE", "[Your Phone]")
+MY_GITHUB       = os.getenv("MY_GITHUB", "https://github.com/Anujsuthar004")
+MY_ROLE         = os.getenv("MY_ROLE", "Automation Engineer")
 
 # Attachments — put your 3 demo screenshots in the same folder
 # Name them exactly as below, or leave empty list to send without attachments
@@ -71,7 +78,7 @@ SUBJECT_TEMPLATES = {
 PLAIN_TEMPLATES = {
     "CA Firm": """Hi,
 
-I'm Anuj — I build automation systems for CA firms in Mumbai.
+I'm {my_name} — I build automation systems for {category_plural} in Mumbai.
 
 I built a WhatsApp bot that handles your client intake automatically:
 - Client messages your WhatsApp number
@@ -85,15 +92,15 @@ I've attached 3 screenshots showing how it works.
 
 Would this be useful for {business_name}? Happy to set up a quick call this week.
 
-Anuj Suthar
-Frontend Developer & Automation Engineer
-📞 8928361781
-GitHub: https://github.com/Anujsuthar004
+{my_full_name}
+{my_role}
+📞 {my_phone}
+GitHub: {my_github}
 """,
 
     "Clinic": """Hi,
 
-I'm Anuj — I build automation systems for clinics in Mumbai.
+I'm {my_name} — I build automation systems for clinics in Mumbai.
 
 I built a WhatsApp bot that handles patient intake automatically:
 - Patient messages your WhatsApp number
@@ -107,15 +114,15 @@ I've attached 3 screenshots showing how it works.
 
 Would this be useful for {business_name}? Happy to set up a quick call this week.
 
-Anuj Suthar
-Frontend Developer & Automation Engineer
-📞 8928361781
-GitHub: https://github.com/Anujsuthar004
+{my_full_name}
+{my_role}
+📞 {my_phone}
+GitHub: {my_github}
 """,
 
     "default": """Hi,
 
-I'm Anuj — I build web and automation systems for businesses in Mumbai.
+I'm {my_name} — I build web and automation systems for businesses in Mumbai.
 
 I recently built a WhatsApp automation system that handles client intake, follow-ups, and data logging automatically — saving hours of manual work every week.
 
@@ -123,10 +130,10 @@ I've attached 3 screenshots showing how it works.
 
 Would this be useful for {business_name}? Happy to connect this week.
 
-Anuj Suthar
-Frontend Developer & Automation Engineer
-📞 8928361781
-GitHub: https://github.com/Anujsuthar004
+{my_full_name}
+{my_role}
+📞 {my_phone}
+GitHub: {my_github}
 """,
 }
 
@@ -134,7 +141,7 @@ HTML_TEMPLATE = """
 <html><body style="font-family: Arial, sans-serif; font-size: 14px; color: #222; max-width: 600px;">
 <p>Hi,</p>
 
-<p>I'm <strong>Anuj</strong> — I build automation systems for {category_plural} in Mumbai.</p>
+<p>I'm <strong>{my_name}</strong> — I build automation systems for {category_plural} in Mumbai.</p>
 
 <p>I built a <strong>WhatsApp bot</strong> that handles client intake automatically:</p>
 <ul>
@@ -152,10 +159,10 @@ HTML_TEMPLATE = """
 
 <br>
 <p>
-  <strong>Anuj Suthar</strong><br>
-  Frontend Developer &amp; Automation Engineer<br>
-  📞 8928361781<br>
-  <a href="https://github.com/Anujsuthar004">GitHub</a>
+  <strong>{my_full_name}</strong><br>
+  {my_role}<br>
+  📞 {my_phone}<br>
+  <a href="{my_github}">GitHub</a>
 </p>
 </body></html>
 """
@@ -233,12 +240,24 @@ def build_email(lead: dict) -> MIMEMultipart:
     subject = subject_tpl.format(name=business[:30])
 
     plain_tpl = PLAIN_TEMPLATES.get(category, PLAIN_TEMPLATES["default"])
-    plain_body = plain_tpl.format(business_name=business)
+    plain_body = plain_tpl.format(
+        business_name=business,
+        my_name=MY_NAME,
+        my_full_name=MY_FULL_NAME,
+        my_role=MY_ROLE,
+        my_phone=MY_PHONE,
+        my_github=MY_GITHUB
+    )
 
     html_body = HTML_TEMPLATE.format(
         category_plural=CATEGORY_PLURAL.get(category, CATEGORY_PLURAL["default"]),
         pain_point=PAIN_POINTS.get(category, PAIN_POINTS["default"]),
         business_name=business,
+        my_name=MY_NAME,
+        my_full_name=MY_FULL_NAME,
+        my_role=MY_ROLE,
+        my_phone=MY_PHONE,
+        my_github=MY_GITHUB
     )
 
     msg = MIMEMultipart("alternative")
