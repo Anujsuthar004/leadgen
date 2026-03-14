@@ -10,11 +10,21 @@ Built for freelancers, agencies, and sales teams who need quality local business
 
 1. **Scrapes Google Maps** — searches any business category in any city/area, extracts business name, phone, website, address, rating
 2. **Enriches with emails** — visits each website and finds contact emails automatically (10 threads in parallel)
-3. **Syncs to Google Sheets** — pushes all leads to a tracker sheet with outreach status columns, deduplicates on re-runs
+3. **Emails leads** — sends personalised, automated cold emails via Gmail SMTP with attachments
+4. **Syncs to Google Sheets** — pushes all leads to a tracker sheet with outreach status columns, deduplicates on re-runs
 
 ---
 
 ## Demo
+
+![WhatsApp Bot Conversation](demo_1_bot_conversation.png)
+*Automated WhatsApp intake flow*
+
+![Instant Alert](demo_2_ca_alert.png)
+*Instant alert sent to your phone*
+
+![Google Sheet Tracker](demo_3_google_sheet.png)
+*Automated lead tracking in Google Sheets*
 
 ```
 Lead Gen Scraper
@@ -103,17 +113,14 @@ CATEGORIES = {
 # Test — one area, one category, no sheets sync
 python main.py --areas "Koramangala" --categories "Restaurant" --no-sheets
 
-# Multiple areas and categories
-python main.py --areas "Koramangala" "Indiranagar" --categories "Restaurant" "Gym"
-
-# Full run — all areas and categories
+# Full pipeline (Scrape + Enrich + Sync)
 python main.py
 
-# Skip scraping, just enrich and sync existing leads
-python main.py --skip-scrape
+# Send cold emails
+python emailer.py
 
-# Scrape only, skip enrichment and sheets
-python main.py --scrape-only
+# Send to specific category with a limit
+python emailer.py --category "CA Firm" --limit 20
 ```
 
 ---
@@ -158,6 +165,13 @@ All in `config.py`:
 | `HEADLESS` | False | Run browser headlessly |
 | `MAX_RETRIES` | 2 | Retries on timeout |
 
+### Email settings (.env)
+
+| Setting | Description |
+|---|---|
+| `SENDER_EMAIL` | Your Gmail address |
+| `SENDER_APP_PASSWORD` | Gmail App Password (not your real password) |
+
 ---
 
 ## Tips
@@ -177,6 +191,7 @@ leadgen/
 ├── main.py          # Orchestrates the full pipeline
 ├── scraper.py       # Google Maps scraper (Playwright)
 ├── enricher.py      # Email enricher (parallel threading)
+├── emailer.py       # Cold email automation (Gmail SMTP)
 ├── sheets.py        # Google Sheets sync
 ├── config.py        # Areas, categories, settings — edit this
 ├── requirements.txt

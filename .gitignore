@@ -5,6 +5,7 @@ credentials.json
 # ── Output data (can be large / sensitive) ───────────────────────────────────
 leads_raw.csv
 leads_enriched.csv
+email_log.csv
 
 # ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
