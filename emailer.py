@@ -42,20 +42,13 @@ console = Console()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-SENDER_EMAIL    = os.getenv("SENDER_EMAIL", "your_email@gmail.com")
+SENDER_EMAIL    = os.getenv("SENDER_EMAIL", "sutharanuj530@gmail.com")
 SENDER_PASSWORD = os.getenv("SENDER_APP_PASSWORD", "")
 ENRICHED_CSV    = "leads_enriched.csv"
 LOG_CSV         = "email_log.csv"
 DAILY_LIMIT     = 50
 DELAY_MIN       = 15   # seconds between emails
 DELAY_MAX       = 25
-
-# Personal info from .env
-MY_NAME         = os.getenv("MY_NAME", "Anuj")
-MY_FULL_NAME    = os.getenv("MY_FULL_NAME", "Anuj Suthar")
-MY_PHONE        = os.getenv("MY_PHONE", "[Your Phone]")
-MY_GITHUB       = os.getenv("MY_GITHUB", "https://github.com/Anujsuthar004")
-MY_ROLE         = os.getenv("MY_ROLE", "Automation Engineer")
 
 # Attachments — put your 3 demo screenshots in the same folder
 # Name them exactly as below, or leave empty list to send without attachments
@@ -78,7 +71,7 @@ SUBJECT_TEMPLATES = {
 PLAIN_TEMPLATES = {
     "CA Firm": """Hi,
 
-I'm {my_name} — I build automation systems for {category_plural} in Mumbai.
+I'm Anuj — I build automation systems for CA firms in Mumbai.
 
 I built a WhatsApp bot that handles your client intake automatically:
 - Client messages your WhatsApp number
@@ -92,15 +85,15 @@ I've attached 3 screenshots showing how it works.
 
 Would this be useful for {business_name}? Happy to set up a quick call this week.
 
-{my_full_name}
-{my_role}
-📞 {my_phone}
-GitHub: {my_github}
+Anuj Suthar
+Frontend Developer & Automation Engineer
+📞 8928361781
+GitHub: https://github.com/Anujsuthar004
 """,
 
     "Clinic": """Hi,
 
-I'm {my_name} — I build automation systems for clinics in Mumbai.
+I'm Anuj — I build automation systems for clinics in Mumbai.
 
 I built a WhatsApp bot that handles patient intake automatically:
 - Patient messages your WhatsApp number
@@ -114,15 +107,15 @@ I've attached 3 screenshots showing how it works.
 
 Would this be useful for {business_name}? Happy to set up a quick call this week.
 
-{my_full_name}
-{my_role}
-📞 {my_phone}
-GitHub: {my_github}
+Anuj Suthar
+Frontend Developer & Automation Engineer
+📞 8928361781
+GitHub: https://github.com/Anujsuthar004
 """,
 
     "default": """Hi,
 
-I'm {my_name} — I build web and automation systems for businesses in Mumbai.
+I'm Anuj — I build web and automation systems for businesses in Mumbai.
 
 I recently built a WhatsApp automation system that handles client intake, follow-ups, and data logging automatically — saving hours of manual work every week.
 
@@ -130,10 +123,10 @@ I've attached 3 screenshots showing how it works.
 
 Would this be useful for {business_name}? Happy to connect this week.
 
-{my_full_name}
-{my_role}
-📞 {my_phone}
-GitHub: {my_github}
+Anuj Suthar
+Frontend Developer & Automation Engineer
+📞 8928361781
+GitHub: https://github.com/Anujsuthar004
 """,
 }
 
@@ -141,7 +134,7 @@ HTML_TEMPLATE = """
 <html><body style="font-family: Arial, sans-serif; font-size: 14px; color: #222; max-width: 600px;">
 <p>Hi,</p>
 
-<p>I'm <strong>{my_name}</strong> — I build automation systems for {category_plural} in Mumbai.</p>
+<p>I'm <strong>Anuj</strong> — I build automation systems for {category_plural} in Mumbai.</p>
 
 <p>I built a <strong>WhatsApp bot</strong> that handles client intake automatically:</p>
 <ul>
@@ -159,10 +152,10 @@ HTML_TEMPLATE = """
 
 <br>
 <p>
-  <strong>{my_full_name}</strong><br>
-  {my_role}<br>
-  📞 {my_phone}<br>
-  <a href="{my_github}">GitHub</a>
+  <strong>Anuj Suthar</strong><br>
+  Frontend Developer &amp; Automation Engineer<br>
+  📞 8928361781<br>
+  <a href="https://github.com/Anujsuthar004">GitHub</a>
 </p>
 </body></html>
 """
@@ -188,15 +181,19 @@ CATEGORY_PLURAL = {
 LOG_HEADERS = ["Email", "Business Name", "Category", "Area", "Status", "Sent At", "Error"]
 
 def load_email_log() -> set:
-    """Return set of emails already contacted."""
-    sent = set()
+    """
+    Return set of emails already attempted (Sent OR Failed).
+    Treating Failed as contacted prevents re-sending to the same address
+    after a transient SMTP error — which was causing duplicate emails.
+    """
+    contacted = set()
     if not Path(LOG_CSV).exists():
-        return sent
+        return contacted
     with open(LOG_CSV, "r", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            if row.get("Status") == "Sent":
-                sent.add(row.get("Email", "").lower())
-    return sent
+            if row.get("Status") in ("Sent", "Failed"):
+                contacted.add(row.get("Email", "").lower())
+    return contacted
 
 def append_log(row: dict):
     write_header = not Path(LOG_CSV).exists()
@@ -240,29 +237,17 @@ def build_email(lead: dict) -> MIMEMultipart:
     subject = subject_tpl.format(name=business[:30])
 
     plain_tpl = PLAIN_TEMPLATES.get(category, PLAIN_TEMPLATES["default"])
-    plain_body = plain_tpl.format(
-        business_name=business,
-        my_name=MY_NAME,
-        my_full_name=MY_FULL_NAME,
-        my_role=MY_ROLE,
-        my_phone=MY_PHONE,
-        my_github=MY_GITHUB
-    )
+    plain_body = plain_tpl.format(business_name=business)
 
     html_body = HTML_TEMPLATE.format(
         category_plural=CATEGORY_PLURAL.get(category, CATEGORY_PLURAL["default"]),
         pain_point=PAIN_POINTS.get(category, PAIN_POINTS["default"]),
         business_name=business,
-        my_name=MY_NAME,
-        my_full_name=MY_FULL_NAME,
-        my_role=MY_ROLE,
-        my_phone=MY_PHONE,
-        my_github=MY_GITHUB
     )
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = f"Anuj | Voola <{SENDER_EMAIL}>"
+    msg["From"]    = f"Anuj Suthar <{SENDER_EMAIL}>"
     msg["To"]      = to_email
     msg["Reply-To"] = SENDER_EMAIL
 
@@ -281,9 +266,18 @@ def build_email(lead: dict) -> MIMEMultipart:
 
     return msg
 
-def send_email(smtp, msg: MIMEMultipart, to_email: str) -> bool:
+def get_smtp():
+    """Create a fresh SMTP connection."""
+    smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+    smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
+    return smtp
+
+def send_email(msg: MIMEMultipart, to_email: str) -> bool:
+    """Open fresh connection per email — avoids timeout on long runs."""
     try:
+        smtp = get_smtp()
         smtp.sendmail(SENDER_EMAIL, to_email, msg.as_string())
+        smtp.quit()
         return True
     except Exception as e:
         console.print(f"  [red]Send failed: {e}[/red]")
@@ -333,9 +327,10 @@ def run(category_filter=None, limit=DAILY_LIMIT, dry_run=False):
             return email
         return ""
 
-    # Filter: has clean email, not already sent
+    # Filter: has clean email, not already attempted
     candidates = []
     skipped_bad = 0
+    seen_emails = set()  # deduplicate within this run (same email = different area)
     for r in all_leads:
         raw_email = r.get("Email", "")
         if raw_email in ("Not Found", "No Website", ""):
@@ -346,10 +341,13 @@ def run(category_filter=None, limit=DAILY_LIMIT, dry_run=False):
             continue
         if clean in already_sent:
             continue
+        if clean in seen_emails:
+            continue  # same email scraped under a different area — skip duplicate
         if category_filter and r.get("Category") != category_filter:
             continue
         r["Email"] = clean  # replace with cleaned version
         candidates.append(r)
+        seen_emails.add(clean)
 
     if skipped_bad:
         console.print(f"[yellow]Skipped {skipped_bad} leads with invalid/malformed emails[/yellow]")
@@ -369,12 +367,12 @@ def run(category_filter=None, limit=DAILY_LIMIT, dry_run=False):
     sent_count = 0
     failed_count = 0
 
-    smtp = None
     if not dry_run:
+        # Test connection once to validate credentials
         try:
-            smtp = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-            smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
-            console.print(f"[green]Gmail connected.[/green]\n")
+            test = get_smtp()
+            test.quit()
+            console.print(f"[green]Gmail credentials verified.[/green]\n")
         except Exception as e:
             console.print(f"[red]Gmail login failed: {e}[/red]")
             console.print("Make sure you're using an App Password, not your real Gmail password.")
@@ -393,7 +391,7 @@ def run(category_filter=None, limit=DAILY_LIMIT, dry_run=False):
             continue
 
         msg = build_email(lead)
-        success = send_email(smtp, msg, email)
+        success = send_email(msg, email)
 
         log_row = {
             "Email":         email,
@@ -418,9 +416,6 @@ def run(category_filter=None, limit=DAILY_LIMIT, dry_run=False):
             wait = random.randint(DELAY_MIN, DELAY_MAX)
             console.print(f"  [dim]Waiting {wait}s...[/dim]")
             time.sleep(wait)
-
-    if smtp:
-        smtp.quit()
 
     console.print(f"\n[bold green]Done.[/bold green] Sent: {sent_count}  |  Failed: {failed_count}")
     console.print(f"Log saved to: [cyan]{LOG_CSV}[/cyan]")
