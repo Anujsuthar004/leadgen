@@ -71,7 +71,7 @@ SUBJECT_TEMPLATES = {
 PLAIN_TEMPLATES = {
     "CA Firm": """Hi,
 
-I'm Anuj — I build automation systems for CA firms in Mumbai.
+{social_proof}I'm Anuj — I build automation systems for CA firms in Mumbai.
 
 I built a WhatsApp bot that handles your client intake automatically:
 - Client messages your WhatsApp number
@@ -93,7 +93,7 @@ GitHub: https://github.com/Anujsuthar004
 
     "Clinic": """Hi,
 
-I'm Anuj — I build automation systems for clinics in Mumbai.
+{social_proof}I'm Anuj — I build automation systems for clinics in Mumbai.
 
 I built a WhatsApp bot that handles patient intake automatically:
 - Patient messages your WhatsApp number
@@ -115,7 +115,7 @@ GitHub: https://github.com/Anujsuthar004
 
     "default": """Hi,
 
-I'm Anuj — I build web and automation systems for businesses in Mumbai.
+{social_proof}I'm Anuj — I build web and automation systems for businesses in Mumbai.
 
 I recently built a WhatsApp automation system that handles client intake, follow-ups, and data logging automatically — saving hours of manual work every week.
 
@@ -134,7 +134,7 @@ HTML_TEMPLATE = """
 <html><body style="font-family: Arial, sans-serif; font-size: 14px; color: #222; max-width: 600px;">
 <p>Hi,</p>
 
-<p>I'm <strong>Anuj</strong> — I build automation systems for {category_plural} in Mumbai.</p>
+{social_proof_paragraph}<p>I'm <strong>Anuj</strong> — I build automation systems for {category_plural} in Mumbai.</p>
 
 <p>I built a <strong>WhatsApp bot</strong> that handles client intake automatically:</p>
 <ul>
@@ -228,6 +228,31 @@ def update_sheet_status(email: str, status: str):
 
 # ── Email sender ──────────────────────────────────────────────────────────────
 
+def build_social_proof_line(lead: dict) -> str:
+    """
+    Generate a personalised sentence using real lead data (rating, reviews, area).
+    Returns empty string if insufficient data — templates handle this gracefully.
+    """
+    name    = lead.get("Business Name", "").split("|")[0].strip()[:35]
+    rating  = (lead.get("Rating") or "").strip()
+    reviews = (lead.get("Reviews") or "").strip()
+    area    = (lead.get("Area") or "").strip()
+
+    try:
+        r_count = int(reviews.replace(",", ""))
+    except (ValueError, AttributeError):
+        r_count = 0
+
+    if rating and r_count >= 5:
+        return (
+            f"I noticed {name} has {r_count} Google reviews "
+            f"and a {rating}★ rating — that's a well-established business in {area}.\n\n"
+        )
+    if rating:
+        return f"I saw {name}'s {rating}★ Google rating — impressive for {area}.\n\n"
+    return ""
+
+
 def build_email(lead: dict) -> MIMEMultipart:
     category = lead.get("Category", "default")
     business = lead.get("Business Name", "your business")
@@ -236,13 +261,20 @@ def build_email(lead: dict) -> MIMEMultipart:
     subject_tpl = SUBJECT_TEMPLATES.get(category, SUBJECT_TEMPLATES["default"])
     subject = subject_tpl.format(name=business[:30])
 
+    social_proof = build_social_proof_line(lead)
+    social_proof_paragraph = (
+        f'<p style="color:#555;font-style:italic;">{social_proof.strip()}</p>\n\n'
+        if social_proof else ""
+    )
+
     plain_tpl = PLAIN_TEMPLATES.get(category, PLAIN_TEMPLATES["default"])
-    plain_body = plain_tpl.format(business_name=business)
+    plain_body = plain_tpl.format(business_name=business, social_proof=social_proof)
 
     html_body = HTML_TEMPLATE.format(
         category_plural=CATEGORY_PLURAL.get(category, CATEGORY_PLURAL["default"]),
         pain_point=PAIN_POINTS.get(category, PAIN_POINTS["default"]),
         business_name=business,
+        social_proof_paragraph=social_proof_paragraph,
     )
 
     msg = MIMEMultipart("alternative")

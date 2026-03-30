@@ -64,3 +64,19 @@ ENRICHED_CSV = "leads_enriched.csv"
 
 # Google Sheets
 SHEET_NAME = "Leadgen Tracker"   # name of the tab inside your sheet
+
+# Lead scoring weights (used by scorer.py)
+SCORE_WEIGHTS = {
+    "has_website":    20,   # biggest single signal for reachability
+    "has_phone":      10,
+    "rating_4_plus":  25,   # credible, established business
+    "rating_4_5_plus": 10,  # bonus for exceptional rating
+    "reviews_20_plus": 15,  # proven review volume
+    "reviews_100_plus": 10, # bonus for well-known business
+    "category_premium": 10, # higher service value categories
+}
+
+PREMIUM_CATEGORIES = {
+    "CA Firm", "Chartered Accountant",
+    "Clinic", "Dentist", "Physiotherapist", "Hospital", "Doctor",
+}

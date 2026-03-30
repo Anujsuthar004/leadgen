@@ -3,7 +3,7 @@ main.py — Runs the full lead gen pipeline.
 
 Steps:
   1. Scrape Google Maps → leads_raw.csv
-  2. Enrich with emails → leads_enriched.csv
+  2. Enrich with emails → leads_enriched.csv  (sorted by lead score)
   3. Sync to Google Sheets
 
 Usage:
@@ -14,6 +14,8 @@ Usage:
   python main.py --skip-enrich                      # scrape + sync only
   python main.py --scrape-only                      # scrape only, no enrich/sync
   python main.py --no-sheets                        # scrape + enrich, skip sheets sync
+  python main.py --followup                         # send follow-ups to leads 5+ days old
+  python main.py --followup --followup-days 7       # custom follow-up window
 """
 
 import argparse
@@ -42,6 +44,10 @@ def main():
                         help="Only scrape, do not enrich or sync")
     parser.add_argument("--no-sheets", action="store_true",
                         help="Do not sync to Google Sheets")
+    parser.add_argument("--followup", action="store_true",
+                        help="Send follow-up emails to leads contacted 5+ days ago")
+    parser.add_argument("--followup-days", type=int, default=5,
+                        help="Minimum days since initial email for follow-up (default: 5)")
     args = parser.parse_args()
 
     console.print(Panel.fit(
@@ -81,6 +87,12 @@ def main():
         run_sync()
     else:
         console.print("\n[yellow]Step 3/3 — Sheets sync skipped[/yellow]")
+
+    # ── Step 4: Follow-up Emails ──────────────────────────────────
+    if args.followup:
+        console.print("\n[bold]Step 4 — Sending Follow-up Emails[/bold]")
+        from followup import run as run_followup
+        run_followup(min_days=args.followup_days)
 
     console.print("\n[bold green]Pipeline complete.[/bold green]")
 
