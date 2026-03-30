@@ -59,8 +59,14 @@ HEADLESS = False               # False = browser visible (safer for testing)
 MAX_RETRIES = 2               # retries on block/timeout
 
 # File paths
-RAW_CSV = "leads_raw.csv"
-ENRICHED_CSV = "leads_enriched.csv"
+DATA_DIR = "data"
+LEADS_CSV = f"{DATA_DIR}/leads.csv"
+ARCHIVE_DIR = f"{DATA_DIR}/archive"
+
+# Legacy CSVs are migrated into data/leads.csv on first run.
+LEGACY_RAW_CSV = "leads_raw.csv"
+LEGACY_ENRICHED_CSV = "leads_enriched.csv"
+LEGACY_EMAIL_LOG_CSV = "email_log.csv"
 
 # Google Sheets
 SHEET_NAME = "Leadgen Tracker"   # name of the tab inside your sheet

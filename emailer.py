@@ -1,11 +1,11 @@
 """
 emailer.py — Cold email automation for leads
 
-Reads leads_enriched.csv → sends personalised emails via Gmail SMTP
-→ logs status to Google Sheet + email_log.csv
+Reads the canonical data/leads.csv file and updates outreach status in place.
+Google Sheets is updated after successful sends so the tracker stays aligned.
 
 Limits: 50 emails/day by default (safe for Gmail)
-Safe to re-run — skips leads already marked "Emailed" in the log
+Safe to re-run — skips leads already marked as contacted in leads.csv
 
 Setup:
   1. Enable Gmail 2FA → generate App Password (not your real password)
@@ -21,7 +21,6 @@ Run:
   python emailer.py --dry-run             # preview without sending
 """
 
-import csv
 import os
 import smtplib
 import time
@@ -37,6 +36,9 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 
+from config import LEADS_CSV, SHEET_NAME
+from leads_store import load_leads, now_timestamp, save_leads
+
 load_dotenv()
 console = Console()
 
@@ -44,8 +46,6 @@ console = Console()
 
 SENDER_EMAIL    = os.getenv("SENDER_EMAIL", "sutharanuj530@gmail.com")
 SENDER_PASSWORD = os.getenv("SENDER_APP_PASSWORD", "")
-ENRICHED_CSV    = "leads_enriched.csv"
-LOG_CSV         = "email_log.csv"
 DAILY_LIMIT     = 50
 DELAY_MIN       = 15   # seconds between emails
 DELAY_MAX       = 25
@@ -176,33 +176,6 @@ CATEGORY_PLURAL = {
     "default":   "businesses",
 }
 
-# ── Log helpers ───────────────────────────────────────────────────────────────
-
-LOG_HEADERS = ["Email", "Business Name", "Category", "Area", "Status", "Sent At", "Error"]
-
-def load_email_log() -> set:
-    """
-    Return set of emails already attempted (Sent OR Failed).
-    Treating Failed as contacted prevents re-sending to the same address
-    after a transient SMTP error — which was causing duplicate emails.
-    """
-    contacted = set()
-    if not Path(LOG_CSV).exists():
-        return contacted
-    with open(LOG_CSV, "r", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            if row.get("Status") in ("Sent", "Failed"):
-                contacted.add(row.get("Email", "").lower())
-    return contacted
-
-def append_log(row: dict):
-    write_header = not Path(LOG_CSV).exists()
-    with open(LOG_CSV, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=LOG_HEADERS)
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
-
 def update_sheet_status(email: str, status: str):
     """Mark lead as Emailed in Google Sheet."""
     try:
@@ -214,7 +187,7 @@ def update_sheet_status(email: str, status: str):
         )
         client = gspread.authorize(creds)
         sheet = client.open_by_key(os.getenv("GOOGLE_SHEET_ID"))
-        ws = sheet.worksheet("Leadgen Tracker")
+        ws = sheet.worksheet(SHEET_NAME)
         # Find the row with this email
         all_emails = ws.col_values(7)  # Email column
         for i, cell_email in enumerate(all_emails, 1):
@@ -323,14 +296,10 @@ def run(category_filter=None, limit=DAILY_LIMIT, dry_run=False):
         console.print("Get one at: https://myaccount.google.com/apppasswords")
         return
 
-    if not Path(ENRICHED_CSV).exists():
-        console.print(f"[red]{ENRICHED_CSV} not found.[/red]")
+    all_leads = load_leads()
+    if not all_leads:
+        console.print(f"[red]{LEADS_CSV} not found or empty.[/red]")
         return
-
-    with open(ENRICHED_CSV, "r", encoding="utf-8") as f:
-        all_leads = list(csv.DictReader(f))
-
-    already_sent = load_email_log()
 
     def clean_email(raw: str) -> str:
         """
@@ -371,10 +340,10 @@ def run(category_filter=None, limit=DAILY_LIMIT, dry_run=False):
         if not clean:
             skipped_bad += 1
             continue
-        if clean in already_sent:
-            continue
         if clean in seen_emails:
             continue  # same email scraped under a different area — skip duplicate
+        if r.get("Outreach Status") in ("Contacted", "Followed Up", "Email Failed"):
+            continue
         if category_filter and r.get("Category") != category_filter:
             continue
         r["Email"] = clean  # replace with cleaned version
@@ -424,24 +393,24 @@ def run(category_filter=None, limit=DAILY_LIMIT, dry_run=False):
 
         msg = build_email(lead)
         success = send_email(msg, email)
-
-        log_row = {
-            "Email":         email,
-            "Business Name": name,
-            "Category":      category,
-            "Area":          area,
-            "Status":        "Sent" if success else "Failed",
-            "Sent At":       datetime.now().strftime("%d %b %Y %H:%M"),
-            "Error":         "" if success else "Send failed",
-        }
-        append_log(log_row)
+        send_time = now_timestamp()
 
         if success:
             sent_count += 1
+            lead["Outreach Status"] = "Contacted"
+            lead["Channel"] = "Email"
+            lead["Last Contact Date"] = send_time
+            lead["Updated At"] = send_time
             console.print(f"  [green]✓ Sent[/green]")
             update_sheet_status(email, "Contacted")
         else:
             failed_count += 1
+            lead["Outreach Status"] = "Email Failed"
+            lead["Channel"] = "Email"
+            lead["Last Contact Date"] = send_time
+            lead["Updated At"] = send_time
+
+        save_leads(all_leads)
 
         # Delay between sends — important for deliverability
         if i < len(to_send):
@@ -450,7 +419,7 @@ def run(category_filter=None, limit=DAILY_LIMIT, dry_run=False):
             time.sleep(wait)
 
     console.print(f"\n[bold green]Done.[/bold green] Sent: {sent_count}  |  Failed: {failed_count}")
-    console.print(f"Log saved to: [cyan]{LOG_CSV}[/cyan]")
+    console.print(f"Saved to: [cyan]{LEADS_CSV}[/cyan]")
     if sent_count > 0:
         console.print(f"[dim]Run again tomorrow for the next batch (limit: {DAILY_LIMIT}/day)[/dim]")
 

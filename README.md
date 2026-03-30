@@ -12,6 +12,7 @@ Built for freelancers, agencies, and sales teams who need quality local business
 2. **Enriches with emails** — visits each website and finds contact emails automatically (10 threads in parallel)
 3. **Emails leads** — sends personalised, automated cold emails via Gmail SMTP with attachments
 4. **Syncs to Google Sheets** — pushes all leads to a tracker sheet with outreach status columns, deduplicates on re-runs
+5. **Keeps one canonical CSV** — every pipeline step updates `data/leads.csv` instead of creating separate raw/enriched files
 
 ---
 
@@ -131,8 +132,8 @@ python emailer.py --category "CA Firm" --limit 20
 
 | File | Contents |
 |---|---|
-| `leads_raw.csv` | Scraped leads — name, phone, website, address, rating |
-| `leads_enriched.csv` | Same + email column |
+| `data/leads.csv` | Canonical lead file — scraped fields, email enrichment, score, outreach status, follow-up metadata |
+| `data/archive/*.csv` | Legacy CSVs are moved here automatically on first run so the active workspace only uses one live CSV |
 
 ### Google Sheet columns
 
@@ -177,6 +178,7 @@ All in `config.py`:
 ## Tips
 
 - Start with `HEADLESS = False` so you can see what's happening
+- The scraper now reuses one browser page, so it won't keep opening new tabs while it runs
 - Test with one area before running everything
 - If Google blocks you, increase `DELAY_MIN` and `DELAY_MAX`
 - The scraper and sheets sync are both safe to re-run — duplicates are skipped automatically
@@ -192,9 +194,11 @@ leadgen/
 ├── scraper.py       # Google Maps scraper (Playwright)
 ├── enricher.py      # Email enricher (parallel threading)
 ├── emailer.py       # Cold email automation (Gmail SMTP)
+├── leads_store.py   # Shared helpers for the single data/leads.csv store
 ├── sheets.py        # Google Sheets sync
 ├── config.py        # Areas, categories, settings — edit this
 ├── requirements.txt
+├── data/leads.csv   # Single canonical lead file (created on first run)
 └── .env             # Your credentials (never commit this)
 ```
 
@@ -205,7 +209,7 @@ leadgen/
 - Google Maps scraping may break if Google changes their HTML structure
 - Delays are necessary — running too fast will trigger CAPTCHAs
 - Email enrichment works best for businesses with a website
-- Re-runs load existing CSV to skip already-scraped leads
+- Re-runs load the canonical CSV to skip or refresh existing leads
 
 ---
 

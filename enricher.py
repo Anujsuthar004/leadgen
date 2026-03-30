@@ -12,25 +12,24 @@ Pages crawled per lead:
   2. Up to 2 contact-style sub-pages (contact, reach, enquiry…)
   3. Up to 2 secondary sub-pages (about, team, staff…)
 
-Reads from leads_raw.csv, writes to leads_enriched.csv (sorted by lead score).
+Reads from and updates the canonical data/leads.csv file.
 
 Run:
   python enricher.py
 """
 
-import csv
 import json
 import re
 import time
 import random
-from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 from rich.console import Console
 
-from config import RAW_CSV, ENRICHED_CSV, DELAY_MIN, DELAY_MAX
+from config import DELAY_MIN, DELAY_MAX, LEADS_CSV
+from leads_store import load_leads, now_timestamp, save_leads
 from scorer import sort_leads_by_score
 
 console = Console()
@@ -230,13 +229,7 @@ def enrich_lead(website: str) -> str:
 
 
 def run_enricher():
-    if not Path(RAW_CSV).exists():
-        console.print(f"[red]{RAW_CSV} not found. Run scraper.py first.[/red]")
-        return
-
-    with open(RAW_CSV, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
+    rows = load_leads()
 
     if not rows:
         console.print("[yellow]No leads to enrich.[/yellow]")
@@ -254,9 +247,16 @@ def run_enricher():
     def process(i, row):
         name    = row.get("Business Name", "")
         website = row.get("Website", "").strip()
-        email   = "No Website" if not website else enrich_lead(website)
+        existing_email = row.get("Email", "").strip()
+
+        if existing_email not in ("", "Not Found", "No Website"):
+            email = existing_email
+        else:
+            email = "No Website" if not website else enrich_lead(website)
+
         enriched_row = dict(row)
         enriched_row["Email"] = email
+        enriched_row["Updated At"] = now_timestamp()
         results[i] = enriched_row
         with lock:
             status = (
@@ -274,15 +274,10 @@ def run_enricher():
 
     enriched = [r for r in results if r is not None]
     found_count = sum(1 for r in enriched if r.get("Email") not in ("Not Found", "No Website", ""))
-
-    fieldnames = list(dict.fromkeys(list(rows[0].keys()) + ["Email"]))
-    with open(ENRICHED_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(enriched)
+    save_leads(enriched)
 
     console.print(f"\n[bold green]Done.[/bold green] Emails found: {found_count}/{len(rows)}")
-    console.print(f"Saved to: [cyan]{ENRICHED_CSV}[/cyan]")
+    console.print(f"Saved to: [cyan]{LEADS_CSV}[/cyan]")
 
 
 if __name__ == "__main__":

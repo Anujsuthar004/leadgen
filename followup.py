@@ -2,11 +2,11 @@
 followup.py — Send follow-up emails to leads contacted 5+ days ago.
 
 Logic:
-  1. Read email_log.csv
-  2. Find rows where Status="Sent" AND Sent At >= --days days ago
-  3. Exclude emails that already have a "Followup Sent" row in the log
+  1. Read data/leads.csv
+  2. Find rows where Outreach Status="Contacted" AND Last Contact Date >= --days days ago
+  3. Exclude leads that already have a Follow-up Date
   4. Send a short 2-3 sentence follow-up (no attachments)
-  5. Append new row with Status="Followup Sent" to email_log.csv
+  5. Update the same leads.csv row with follow-up details
 
 Run:
   python followup.py                 # send follow-ups due (default: 5+ days)
@@ -14,7 +14,6 @@ Run:
   python followup.py --days 7        # change follow-up window
 """
 
-import csv
 import os
 import smtplib
 import time
@@ -23,17 +22,17 @@ import argparse
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from pathlib import Path
 
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 
+from config import LEADS_CSV
+from leads_store import load_leads, now_timestamp, save_leads
+
 load_dotenv()
 console = Console()
 
-LOG_CSV         = "email_log.csv"
-LOG_HEADERS     = ["Email", "Business Name", "Category", "Area", "Status", "Sent At", "Error"]
 SENDER_EMAIL    = os.getenv("SENDER_EMAIL", "")
 SENDER_PASSWORD = os.getenv("SENDER_APP_PASSWORD", "")
 DELAY_MIN       = 15
@@ -70,7 +69,7 @@ FOLLOWUP_HTML = """\
 
 
 def _parse_sent_date(sent_at: str) -> datetime | None:
-    for fmt in ("%d %b %Y %H:%M", "%d %b %Y"):
+    for fmt in ("%Y-%m-%d %H:%M", "%d %b %Y %H:%M", "%d %b %Y"):
         try:
             return datetime.strptime(sent_at.strip(), fmt)
         except ValueError:
@@ -78,38 +77,23 @@ def _parse_sent_date(sent_at: str) -> datetime | None:
     return None
 
 
-def load_log() -> list[dict]:
-    if not Path(LOG_CSV).exists():
-        return []
-    with open(LOG_CSV, "r", encoding="utf-8") as f:
-        return list(csv.DictReader(f))
-
-
 def get_followup_candidates(rows: list[dict], min_days: int) -> list[dict]:
     """
     Return leads eligible for a follow-up:
-    - Status == "Sent" (original email)
-    - Sent At >= min_days days ago
-    - No "Followup Sent" row exists for this email
+    - Outreach Status == "Contacted" (original email sent)
+    - Last Contact Date >= min_days days ago
+    - No Follow-up Date exists yet
     """
     cutoff = datetime.now() - timedelta(days=min_days)
-    already_followed = {
-        r["Email"].lower()
-        for r in rows
-        if r.get("Status") == "Followup Sent"
-    }
-    seen: set[str] = set()
     candidates = []
     for row in rows:
-        if row.get("Status") != "Sent":
+        if row.get("Outreach Status") != "Contacted":
             continue
-        email = row.get("Email", "").lower()
-        if email in already_followed or email in seen:
+        if row.get("Follow-up Date", "").strip():
             continue
-        sent_dt = _parse_sent_date(row.get("Sent At", ""))
+        sent_dt = _parse_sent_date(row.get("Last Contact Date", ""))
         if sent_dt and sent_dt <= cutoff:
             candidates.append(row)
-            seen.add(email)
     return candidates
 
 
@@ -133,24 +117,14 @@ def get_smtp():
     smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
     return smtp
 
-
-def append_log(row: dict):
-    write_header = not Path(LOG_CSV).exists()
-    with open(LOG_CSV, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=LOG_HEADERS)
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
-
-
 def run(min_days: int = DEFAULT_DAYS, dry_run: bool = False):
     if not SENDER_PASSWORD and not dry_run:
         console.print("[red]SENDER_APP_PASSWORD not set in .env[/red]")
         return
 
-    rows = load_log()
+    rows = load_leads()
     if not rows:
-        console.print("[yellow]email_log.csv not found or empty.[/yellow]")
+        console.print(f"[yellow]{LEADS_CSV} not found or empty.[/yellow]")
         return
 
     candidates = get_followup_candidates(rows, min_days)
@@ -179,7 +153,7 @@ def run(min_days: int = DEFAULT_DAYS, dry_run: bool = False):
     for i, lead in enumerate(candidates, 1):
         email = lead.get("Email", "")
         name  = lead.get("Business Name", "")
-        sent_at = lead.get("Sent At", "")
+        sent_at = lead.get("Last Contact Date", "")
         console.print(f"[dim]{i}/{len(candidates)}[/dim] {name[:40]:<40} [cyan]{email}[/cyan]  [dim](orig: {sent_at})[/dim]")
 
         if dry_run:
@@ -191,15 +165,13 @@ def run(min_days: int = DEFAULT_DAYS, dry_run: bool = False):
             msg  = build_followup_email(lead)
             smtp.sendmail(SENDER_EMAIL, email, msg.as_string())
             smtp.quit()
-            append_log({
-                "Email":         email,
-                "Business Name": name,
-                "Category":      lead.get("Category", ""),
-                "Area":          lead.get("Area", ""),
-                "Status":        "Followup Sent",
-                "Sent At":       datetime.now().strftime("%d %b %Y %H:%M"),
-                "Error":         "",
-            })
+            followup_time = now_timestamp()
+            lead["Outreach Status"] = "Followed Up"
+            lead["Channel"] = "Email"
+            lead["Last Contact Date"] = followup_time
+            lead["Follow-up Date"] = followup_time
+            lead["Updated At"] = followup_time
+            save_leads(rows)
             sent += 1
             console.print("  [green]✓ Follow-up sent[/green]")
         except Exception as e:

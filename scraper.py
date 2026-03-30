@@ -6,39 +6,28 @@ For each (area, category) pair:
   - Searches "{keyword} in {area} Mumbai"
   - Scrolls through results
   - Extracts: name, phone, website, address, rating, category, service
-  - Saves to leads_raw.csv (appends, never overwrites)
+  - Saves into the canonical data/leads.csv file
 
 Run directly:
   python scraper.py --areas "Andheri West" --categories "CA Firm" "Clinic"
   python scraper.py  # runs all areas × all categories (long)
 """
 
-import csv
-import os
 import random
 import time
 import argparse
 from datetime import datetime
-from pathlib import Path
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 from rich.console import Console
-from rich.progress import track
-from rich import print as rprint
 
 from config import (
     AREAS, CATEGORIES, MAX_RESULTS_PER_SEARCH,
-    DELAY_MIN, DELAY_MAX, HEADLESS, MAX_RETRIES, RAW_CSV
+    DELAY_MIN, DELAY_MAX, HEADLESS, MAX_RETRIES, LEADS_CSV
 )
+from leads_store import load_leads, now_timestamp, upsert_leads
 
 console = Console()
-
-CSV_HEADERS = [
-    "Business Name", "Category", "Service", "Area",
-    "Phone", "Website", "Address", "Rating", "Reviews",
-    "Scraped At"
-]
-
 
 def delay(min_s=None, max_s=None):
     """Random delay to mimic human behaviour."""
@@ -48,37 +37,15 @@ def delay(min_s=None, max_s=None):
     ))
 
 
-def init_csv():
-    """Create CSV with headers if it doesn't exist."""
-    if not Path(RAW_CSV).exists():
-        with open(RAW_CSV, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-            writer.writeheader()
-        console.print(f"[green]Created {RAW_CSV}[/green]")
-
-
-def load_existing_keys():
-    """
-    Load (name, area) pairs already scraped.
-    Used to skip duplicates on re-runs.
-    """
+def load_existing_name_area_keys() -> set[tuple[str, str]]:
+    """Load (name, area) pairs already present in the canonical leads file."""
     keys = set()
-    if not Path(RAW_CSV).exists():
-        return keys
-    with open(RAW_CSV, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            keys.add((row["Business Name"].strip().lower(), row["Area"].strip().lower()))
+    for row in load_leads():
+        name = row.get("Business Name", "").strip().lower()
+        area = row.get("Area", "").strip().lower()
+        if name and area:
+            keys.add((name, area))
     return keys
-
-
-def append_rows(rows: list[dict]):
-    """Append a list of lead dicts to the CSV."""
-    if not rows:
-        return
-    with open(RAW_CSV, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADERS)
-        writer.writerows(rows)
 
 
 def extract_listing_detail(page) -> dict:
@@ -194,8 +161,8 @@ def scrape_area_category(page, area: str, cat_name: str, keyword: str, service: 
                 if end_el:
                     break
 
-            # Fast approach: collect hrefs first, then open each in a new tab.
-            # The search results page stays loaded — no re-navigation needed.
+            # Collect hrefs first, then reuse the same page for each detail view.
+            # This avoids spawning a new browser tab for every listing.
             raw_listings = page.query_selector_all('div[role="feed"] > div > div > a')
             listing_data = []  # list of (name, href)
             for el in raw_listings:
@@ -209,7 +176,6 @@ def scrape_area_category(page, area: str, cat_name: str, keyword: str, service: 
                     continue
             console.print(f"  [dim]Found {len(listing_data)} listings[/dim]")
 
-            context = page.context
             count = 0
 
             for name, href in listing_data:
@@ -221,13 +187,10 @@ def scrape_area_category(page, area: str, cat_name: str, keyword: str, service: 
                     continue
 
                 try:
-                    # Open listing in new tab — search results page stays intact
-                    detail_page = context.new_page()
-                    detail_page.goto(href, wait_until="domcontentloaded", timeout=20000)
+                    page.goto(href, wait_until="domcontentloaded", timeout=20000)
                     delay(1.5, 2.5)
 
-                    detail = extract_listing_detail(detail_page)
-                    detail_page.close()
+                    detail = extract_listing_detail(page)
 
                     lead = {
                         "Business Name": name,
@@ -240,6 +203,7 @@ def scrape_area_category(page, area: str, cat_name: str, keyword: str, service: 
                         "Rating": detail["Rating"],
                         "Reviews": detail["Reviews"],
                         "Scraped At": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "Updated At": now_timestamp(),
                     }
 
                     leads.append(lead)
@@ -254,10 +218,6 @@ def scrape_area_category(page, area: str, cat_name: str, keyword: str, service: 
 
                 except Exception as e:
                     console.print(f"  [yellow]Skipped '{name[:35]}': {str(e)[:50]}[/yellow]")
-                    try:
-                        detail_page.close()
-                    except Exception:
-                        pass
                     delay(1, 2)
                     continue
 
@@ -281,8 +241,7 @@ def scrape_area_category(page, area: str, cat_name: str, keyword: str, service: 
 
 def run_scraper(areas: list[str], categories: dict):
     """Main scraper loop. Iterates areas × categories."""
-    init_csv()
-    existing_keys = load_existing_keys()
+    existing_keys = load_existing_name_area_keys()
     total_scraped = 0
 
     console.print(f"\n[bold blue]Lead Gen Scraper[/bold blue]")
@@ -328,11 +287,12 @@ def run_scraper(areas: list[str], categories: dict):
                         page, area, cat_name, keyword, service, existing_keys
                     )
                     if leads:
-                        append_rows(leads)
-                        total_scraped += len(leads)
+                        inserted, updated = upsert_leads(leads)
+                        total_scraped += inserted
                         console.print(
-                            f"  [bold green]Saved {len(leads)} leads "
-                            f"(total: {total_scraped})[/bold green]\n"
+                            f"  [bold green]Saved {inserted} new leads"
+                            f"{f' and refreshed {updated}' if updated else ''} "
+                            f"(total new: {total_scraped})[/bold green]\n"
                         )
                     delay(DELAY_MIN, DELAY_MAX)
 
@@ -344,7 +304,7 @@ def run_scraper(areas: list[str], categories: dict):
             browser.close()
 
     console.print(f"\n[bold green]Done. Total leads scraped: {total_scraped}[/bold green]")
-    console.print(f"Saved to: [cyan]{RAW_CSV}[/cyan]")
+    console.print(f"Saved to: [cyan]{LEADS_CSV}[/cyan]")
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────

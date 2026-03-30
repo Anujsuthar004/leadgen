@@ -2,8 +2,8 @@
 main.py — Runs the full lead gen pipeline.
 
 Steps:
-  1. Scrape Google Maps → leads_raw.csv
-  2. Enrich with emails → leads_enriched.csv  (sorted by lead score)
+  1. Scrape Google Maps → data/leads.csv
+  2. Enrich emails and scores in the same data/leads.csv file
   3. Sync to Google Sheets
 
 Usage:
@@ -37,7 +37,7 @@ def main():
     parser.add_argument("--categories", nargs="+", default=None,
                         help="Category names to scrape (default: all)")
     parser.add_argument("--skip-scrape", action="store_true",
-                        help="Skip scraping, use existing leads_raw.csv")
+                        help="Skip scraping, use existing data/leads.csv")
     parser.add_argument("--skip-enrich", action="store_true",
                         help="Skip email enrichment")
     parser.add_argument("--scrape-only", action="store_true",

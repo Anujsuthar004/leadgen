@@ -1,7 +1,7 @@
 """
 sheets.py — Syncs enriched leads to Google Sheets.
 
-- Reads leads_enriched.csv
+- Reads data/leads.csv
 - Deduplicates by phone number
 - Pushes new rows to Google Sheet
 - Never overwrites existing rows (safe to re-run)
@@ -32,16 +32,15 @@ Run:
   python sheets.py
 """
 
-import csv
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
 import gspread
 from google.oauth2.service_account import Credentials
 from rich.console import Console
 
-from config import ENRICHED_CSV, SHEET_NAME
+from config import LEADS_CSV, SHEET_NAME
+from leads_store import load_leads
 
 load_dotenv()
 console = Console()
@@ -137,13 +136,7 @@ def csv_row_to_sheet_row(row: dict) -> list:
 
 
 def run_sync():
-    if not Path(ENRICHED_CSV).exists():
-        console.print(f"[red]{ENRICHED_CSV} not found. Run enricher.py first.[/red]")
-        return
-
-    with open(ENRICHED_CSV, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
+    rows = load_leads()
 
     if not rows:
         console.print("[yellow]No leads to sync.[/yellow]")
