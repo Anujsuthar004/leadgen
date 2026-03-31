@@ -53,8 +53,8 @@ CATEGORIES = {
 
 # Scraper behaviour
 MAX_RESULTS_PER_SEARCH = 20   # per area×category combo — keep low to avoid blocks
-DELAY_MIN = 2.5               # seconds between actions
-DELAY_MAX = 5.0               # seconds between actions
+DELAY_MIN = 1.5               # seconds between actions
+DELAY_MAX = 3.0               # seconds between actions
 HEADLESS = False               # False = browser visible (safer for testing)
 MAX_RETRIES = 2               # retries on block/timeout
 

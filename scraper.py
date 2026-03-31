@@ -14,6 +14,8 @@ Run directly:
 """
 
 import random
+import subprocess
+import sys
 import time
 import argparse
 from datetime import datetime
@@ -153,7 +155,7 @@ def scrape_area_category(page, area: str, cat_name: str, keyword: str, service: 
             max_scrolls = MAX_RESULTS_PER_SEARCH // 5
             while scroll_count < max_scrolls:
                 page.evaluate('document.querySelector(\'div[role="feed"]\').scrollBy(0, 800)')
-                delay(1.5, 3)
+                delay(1.0, 2.0)
                 scroll_count += 1
 
                 # Check if end of results
@@ -214,11 +216,11 @@ def scrape_area_category(page, area: str, cat_name: str, keyword: str, service: 
                         f"  [green]✓[/green] {name[:45]:<45} "
                         f"[dim]{detail['Phone'] or 'no phone'}[/dim]"
                     )
-                    delay(1, 2)
+                    delay(0.5, 1.5)
 
                 except Exception as e:
                     console.print(f"  [yellow]Skipped '{name[:35]}': {str(e)[:50]}[/yellow]")
-                    delay(1, 2)
+                    delay(0.5, 1.5)
                     continue
 
             return leads
@@ -307,6 +309,44 @@ def run_scraper(areas: list[str], categories: dict):
     console.print(f"Saved to: [cyan]{LEADS_CSV}[/cyan]")
 
 
+def run_parallel(areas: list[str], categories: dict, workers: int):
+    """
+    Split areas across N worker subprocesses, each with its own browser.
+    Workers write to the shared CSV using FileLock in leads_store.py.
+    """
+    # Distribute areas round-robin so each worker gets a similar mix of
+    # central/suburban areas (avoids one worker finishing much faster).
+    chunks: list[list[str]] = [[] for _ in range(workers)]
+    for i, area in enumerate(areas):
+        chunks[i % workers].append(area)
+
+    # Build the base command (forward --categories if provided)
+    cat_args = []
+    if set(categories.keys()) != set(CATEGORIES.keys()):
+        cat_args = ["--categories"] + list(categories.keys())
+
+    procs = []
+    for chunk in chunks:
+        if not chunk:
+            continue
+        cmd = [sys.executable, __file__, "--areas"] + chunk + cat_args
+        procs.append(subprocess.Popen(cmd))
+        console.print(f"[dim]Worker started for {len(chunk)} areas: {chunk[:3]}{'...' if len(chunk) > 3 else ''}[/dim]")
+
+    console.print(f"\n[bold blue]{len(procs)} workers running in parallel. Press Ctrl+C to stop all.[/bold blue]\n")
+
+    try:
+        for p in procs:
+            p.wait()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopping all workers...[/yellow]")
+        for p in procs:
+            p.terminate()
+        for p in procs:
+            p.wait()
+        console.print("[yellow]All workers stopped. Progress saved.[/yellow]")
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Google Maps Lead Scraper")
@@ -320,6 +360,11 @@ if __name__ == "__main__":
         help="Specific category names to scrape (default: all from config)",
         default=None
     )
+    parser.add_argument(
+        "--workers", type=int, default=1,
+        help="Number of parallel browser workers (default: 1). "
+             "Use 3 for ~3x speedup. Each worker opens its own browser."
+    )
     args = parser.parse_args()
 
     selected_areas = args.areas if args.areas else AREAS
@@ -332,4 +377,8 @@ if __name__ == "__main__":
         console.print(f"[red]No matching categories. Available: {list(CATEGORIES.keys())}[/red]")
         exit(1)
 
-    run_scraper(selected_areas, selected_cats)
+    if args.workers > 1 and not args.areas:
+        # Full run with parallelism — only master process does the dispatch
+        run_parallel(selected_areas, selected_cats, args.workers)
+    else:
+        run_scraper(selected_areas, selected_cats)

@@ -23,7 +23,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from config import AREAS, CATEGORIES
-from scraper import run_scraper
+from scraper import run_scraper, run_parallel
 from enricher import run_enricher
 from sheets import run_sync
 
@@ -44,6 +44,8 @@ def main():
                         help="Only scrape, do not enrich or sync")
     parser.add_argument("--no-sheets", action="store_true",
                         help="Do not sync to Google Sheets")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Parallel browser workers for scraping (default: 1, use 3 for ~3x speedup)")
     parser.add_argument("--followup", action="store_true",
                         help="Send follow-up emails to leads contacted 5+ days ago")
     parser.add_argument("--followup-days", type=int, default=5,
@@ -66,7 +68,10 @@ def main():
     # ── Step 1: Scrape ────────────────────────────────────────────
     if not args.skip_scrape:
         console.print("\n[bold]Step 1/3 — Scraping Google Maps[/bold]")
-        run_scraper(selected_areas, selected_cats)
+        if args.workers > 1:
+            run_parallel(selected_areas, selected_cats, args.workers)
+        else:
+            run_scraper(selected_areas, selected_cats)
     else:
         console.print("\n[yellow]Step 1/3 — Scraping skipped[/yellow]")
 

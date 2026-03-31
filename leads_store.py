@@ -14,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+from filelock import FileLock
+
 from config import (
     ARCHIVE_DIR,
     LEADS_CSV,
@@ -23,6 +25,7 @@ from config import (
 )
 
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M"
+_CSV_LOCK = FileLock("data/leads.lock")
 
 LEADS_HEADERS = [
     "Business Name",
@@ -140,10 +143,11 @@ def _sorted_rows(rows: list[dict]) -> list[dict]:
 
 def save_leads(rows: list[dict]) -> None:
     _ensure_storage_dirs()
-    with Path(LEADS_CSV).open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=LEADS_HEADERS)
-        writer.writeheader()
-        writer.writerows(_sorted_rows(rows))
+    with _CSV_LOCK:
+        with Path(LEADS_CSV).open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=LEADS_HEADERS)
+            writer.writeheader()
+            writer.writerows(_sorted_rows(rows))
 
 
 def _merge_rows(base_rows: list[dict], incoming_rows: list[dict]) -> list[dict]:
@@ -268,28 +272,36 @@ def load_leads() -> list[dict]:
 
 
 def upsert_leads(rows: list[dict]) -> tuple[int, int]:
-    existing = load_leads()
-    merged = [normalize_lead_row(row) for row in existing]
-    key_to_index = {lead_key(row): idx for idx, row in enumerate(merged)}
-    inserted = 0
-    updated = 0
+    # Hold the lock for the full read-modify-write cycle so concurrent
+    # worker processes don't overwrite each other's results.
+    with _CSV_LOCK:
+        existing = _read_csv_rows(LEADS_CSV)
+        merged = [normalize_lead_row(row) for row in existing]
+        key_to_index = {lead_key(row): idx for idx, row in enumerate(merged)}
+        inserted = 0
+        updated = 0
 
-    for row in rows:
-        candidate = normalize_lead_row(row)
-        key = lead_key(candidate)
-        idx = key_to_index.get(key)
+        for row in rows:
+            candidate = normalize_lead_row(row)
+            key = lead_key(candidate)
+            idx = key_to_index.get(key)
 
-        if idx is None:
-            key_to_index[key] = len(merged)
-            merged.append(candidate)
-            inserted += 1
-            continue
+            if idx is None:
+                key_to_index[key] = len(merged)
+                merged.append(candidate)
+                inserted += 1
+                continue
 
-        current = normalize_lead_row(merged[idx])
-        merged_row = merge_lead_rows(current, candidate)
-        if merged_row != current:
-            updated += 1
-        merged[idx] = merged_row
+            current = normalize_lead_row(merged[idx])
+            merged_row = merge_lead_rows(current, candidate)
+            if merged_row != current:
+                updated += 1
+            merged[idx] = merged_row
 
-    save_leads(merged)
+        _ensure_storage_dirs()
+        with Path(LEADS_CSV).open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=LEADS_HEADERS)
+            writer.writeheader()
+            writer.writerows(_sorted_rows(merged))
+
     return inserted, updated
